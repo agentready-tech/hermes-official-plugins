@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.4] - Unreleased
+
+### Fixed
+
+- Do not warn about missing Claude Code during provider discovery or unrelated commands such as `hermes config get`. Explicit Claude setup checks and requests still report the installation hint.
+
 ## [0.3.1] - Unreleased
 
 ### Added

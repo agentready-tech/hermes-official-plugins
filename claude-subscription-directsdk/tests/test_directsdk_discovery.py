@@ -1,12 +1,13 @@
 """Installed-plugin discovery, the `claude` presence check, and offline native metadata contracts."""
 import logging
 import os
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-from conftest import PLUGIN_NAME
+from conftest import HERMES_AGENT_REPO, PLUGIN_NAME
 
 
 def test_installed_plugin_registers_and_constructs_client_without_native_process(profile, tmp_path):
@@ -21,9 +22,9 @@ def test_installed_plugin_registers_and_constructs_client_without_native_process
         client.close()
 
 
-def test_missing_claude_is_reported_on_every_path(profile, tmp_path, caplog):
+def test_missing_claude_is_reported_only_when_used(profile, tmp_path, caplog):
     """No `claude` binary: setup says so, the picker degrades to the catalog, a request refuses with
-    the install hint instead of a Popen traceback, and plugin load logged a warning."""
+    the install hint instead of a Popen traceback, and plugin discovery stays quiet."""
     env = {"PATH": str(tmp_path / "empty-bin"), "HOME": str(tmp_path)}
     status = profile.setup_status(env=env)
     assert status["available"] is False and "npm install -g @anthropic-ai/claude-code" in status["detail"]
@@ -37,16 +38,31 @@ def test_missing_claude_is_reported_on_every_path(profile, tmp_path, caplog):
     finally:
         client.close()
 
-    # Load-time check: importing the plugin logs the install hint (never raises) when Claude Code
-    # is absent, so the provider stays selectable and `hermes model` can explain what is missing.
+    # Merely enumerating providers must not warn about an unused Claude installation.
     import providers
     module_name = type(profile).__module__
     assert module_name.startswith("_hermes_user_provider_")
     del sys.modules[module_name]
     with caplog.at_level(logging.WARNING):
         providers._import_plugin_dir(Path(os.environ["HERMES_HOME"]) / "plugins" / PLUGIN_NAME, "user")
-    assert any("Claude Code is not installed" in rec.getMessage() for rec in caplog.records)
+    assert not any("Claude Code is not installed" in rec.getMessage() for rec in caplog.records)
     assert providers.get_provider_profile(PLUGIN_NAME) is not None
+
+
+def test_config_get_does_not_warn_about_missing_claude(profile):
+    home = Path(os.environ["HERMES_HOME"])
+    with (home / "config.yaml").open("a", encoding="utf-8") as config:
+        config.write("agent:\n  max_turns: 37\n")
+    env = dict(os.environ, PYTHONPATH=str(HERMES_AGENT_REPO))
+    result = subprocess.run(
+        [sys.executable, "-B", "-c",
+         "import sys; from hermes_cli.main import main; "
+         "sys.argv = ['hermes', 'config', 'get', 'agent.max_turns']; main()"],
+        env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "37"
+    assert "Claude Code is not installed" not in result.stderr
 
 
 def test_resolve_honors_the_env_dict_not_the_process_path(profile, tmp_path):

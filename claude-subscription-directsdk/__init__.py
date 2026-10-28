@@ -1,6 +1,5 @@
 """Claude Subscription DirectSDK (Experimental) — standalone Hermes model-provider registration."""
 from datetime import datetime, timezone
-import logging
 import math
 import os
 import shutil
@@ -11,12 +10,10 @@ from providers.base import ProviderProfile
 # Dual import: the Hermes loader imports this directory as a package; the flat test path does not.
 try:
     from .model_catalog import ALIASES, MODEL_METADATA, MODEL_CAPABILITIES, native_model
-    from .directsdk_setup import INSTALL_HINT, _resolve
+    from .directsdk_setup import _resolve
 except ImportError:
     from model_catalog import ALIASES, MODEL_METADATA, MODEL_CAPABILITIES, native_model
-    from directsdk_setup import INSTALL_HINT, _resolve
-
-logger = logging.getLogger(__name__)
+    from directsdk_setup import _resolve
 
 # Core checks `process_command` with a PATH-only `shutil.which` before this plugin is asked, so a CLI found only in
 # an install prefix is handed over as its absolute path; a PATH hit keeps the bare name and follows PATH.
@@ -190,9 +187,6 @@ profile = ClaudeOAuthDirectSDKProfile(
     # A dataclass field (Hermes >= 0.21.4), so a method on the subclass would be shadowed by its None default.
     classify_api_error=classify_api_error,
 )
+# Discovery also runs for unrelated commands such as `hermes config get`. Keep it quiet and
+# the provider selectable; setup_status and actual requests report a missing Claude Code CLI.
 register_provider(profile)
-
-# The provider stays registered when Claude Code is missing so `hermes model` can show the
-# install hint; the request path (`directsdk.Client`) refuses with the same message.
-if _found is None:
-    logger.warning("%s: %s", profile.display_name, INSTALL_HINT)
